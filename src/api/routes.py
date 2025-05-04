@@ -1,0 +1,400 @@
+import re
+import re
+import uuid
+from typing import List
+
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, BackgroundTasks
+from fastapi.responses import Response
+
+from src.models.schemas import MatchRequest, MatchResult, ResumeVacancyMatchRequest, NormalizedResume, \
+    ResumeNormalizationResponse, VacancyRequest, Vacancy, VacancyResponse
+from src.services.db_service import DBService
+from src.services.matcher import ResumeVacancyMatcher
+from src.services.normalizer import ResumeNormalizer
+from src.services.vacancy_parser import VacancyParser
+from src.utils.pdf_extractor import PDFExtractor
+
+# Создание роутера FastAPI
+router = APIRouter()
+
+# Инициализация сервисов
+matcher = ResumeVacancyMatcher()
+db_service = DBService()
+resume_normalizer = ResumeNormalizer()
+vacancy_parser = VacancyParser()
+
+
+# Валидация email
+def is_valid_email(email: str) -> bool:
+    """Проверяет, является ли строка валидным email"""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+@router.post("/match", response_model=MatchResult, tags=["Матчинг"])
+def match_vacancy_resume(request: MatchRequest):
+    """
+    Сопоставление резюме с вакансией
+    
+    - **vacancy_text**: Текст вакансии
+    - **resume_text**: Текст резюме кандидата
+    
+    Возвращает список совпадающих навыков, список отсутствующих навыков,
+    оценку сходства и комментарий от языковой модели.
+    """
+    try:
+        matched_skills, unmatched_skills, tfidf_score, llm_comment = matcher.match(
+            request.vacancy_text, request.resume_text
+        )
+
+        return MatchResult(
+            matched_skills=matched_skills,
+            unmatched_skills=unmatched_skills,
+            tfidf_score=tfidf_score,
+            llm_comment=llm_comment
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload-resume", response_model=ResumeNormalizationResponse, tags=["Резюме"])
+async def upload_resume(
+        file: UploadFile = File(...),
+        email: str = Form(...),
+        background_tasks: BackgroundTasks = None
+):
+    """
+    Загрузка резюме в формате PDF с нормализацией и сохранением в базу данных
+    
+    - **file**: PDF-файл с резюме
+    - **email**: Email пользователя
+    
+    Возвращает идентификатор загруженного резюме и нормализованные данные.
+    """
+    # Проверка формата файла
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Только PDF-файлы принимаются")
+
+    # Проверка email
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Некорректный формат email")
+
+    try:
+        # Чтение содержимого файла
+        pdf_content = await file.read()
+
+        # Извлечение текста из PDF
+        resume_text = PDFExtractor.extract_text_from_bytes(pdf_content)
+
+        if not resume_text or len(resume_text.strip()) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Не удалось извлечь достаточно текста из PDF. Возможно, файл пустой или защищен."
+            )
+
+        # Извлечение метаданных из PDF
+        metadata, errors = PDFExtractor.get_metadata(pdf_content)
+
+        if metadata:
+            # Добавляем имя файла в метаданные
+            metadata["filename"] = file.filename
+
+        # Генерируем идентификатор и сохраняем резюме в базу данных
+        resume_id = str(uuid.uuid4())
+
+        # Сохранение сырого резюме и PDF-файла в базу данных
+        save_success = db_service.save_resume(resume_id, email, resume_text, metadata, pdf_content)
+
+        if not save_success:
+            raise HTTPException(
+                status_code=500,
+                detail="Не удалось сохранить резюме в базу данных. Попробуйте позже."
+            )
+
+        # Нормализация резюме с помощью DeepSeek
+        normalized_data = resume_normalizer.normalize_resume(resume_text, email)
+
+        if not normalized_data:
+            raise HTTPException(
+                status_code=500,
+                detail="Не удалось нормализовать резюме. Попробуйте позже."
+            )
+
+        # Сохранение нормализованных данных в базу данных
+        normalized_save_success = db_service.save_normalized_resume(resume_id, normalized_data)
+
+        if not normalized_save_success:
+            raise HTTPException(
+                status_code=500,
+                detail="Резюме сохранено, но не удалось сохранить нормализованные данные. Попробуйте позже."
+            )
+
+        # Создаем объект нормализованного резюме
+        normalized_resume = NormalizedResume(
+            name=normalized_data.get("name", ""),
+            email=normalized_data.get("email", ""),
+            phone=normalized_data.get("phone", ""),
+            vacancy_name=normalized_data.get("vacancy_name", ""),
+            languages=normalized_data.get("languages", []),
+            frameworks=normalized_data.get("frameworks", []),
+            education=normalized_data.get("education", []),
+            work_experience=normalized_data.get("work_experience", [])
+        )
+
+        # Создаем ответ
+        response = ResumeNormalizationResponse(
+            resume_id=resume_id,
+            normalized_data=normalized_resume
+        )
+
+        # Если есть ошибки, добавляем их в ответ
+        if errors:
+            response.message = f"Резюме нормализовано и сохранено, но с предупреждениями: {', '.join(errors)}"
+
+        return response
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при обработке файла: {str(e)}")
+
+
+@router.post("/match-stored-resume", response_model=MatchResult, tags=["Матчинг"])
+def match_stored_resume(request: ResumeVacancyMatchRequest):
+    """
+    Сопоставление ранее загруженного резюме с вакансией
+    
+    - **resume_id**: Идентификатор резюме
+    - **vacancy_text**: Текст вакансии
+    
+    Возвращает результат сопоставления.
+    """
+    # Получаем резюме из базы данных
+    resume_text, record = db_service.get_resume(request.resume_id)
+
+    if not resume_text:
+        raise HTTPException(status_code=404, detail=f"Резюме с ID {request.resume_id} не найдено")
+
+    try:
+        # Выполняем сопоставление
+        matched_skills, unmatched_skills, tfidf_score, llm_comment = matcher.match(
+            request.vacancy_text, resume_text
+        )
+
+        return MatchResult(
+            matched_skills=matched_skills,
+            unmatched_skills=unmatched_skills,
+            tfidf_score=tfidf_score,
+            llm_comment=llm_comment
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/resumes/{email}", tags=["Резюме"])
+def get_user_resumes(email: str):
+    """
+    Получение списка резюме пользователя по email
+    
+    - **email**: Email пользователя
+    
+    Возвращает список резюме пользователя.
+    """
+    if not is_valid_email(email):
+        raise HTTPException(status_code=400, detail="Некорректный формат email")
+
+    # Получаем резюме из базы данных
+    resumes = db_service.get_resumes_by_email(email)
+
+    return {"email": email, "resumes": resumes}
+
+
+@router.get("/normalized-resume/{resume_id}", response_model=NormalizedResume, tags=["Резюме"])
+def get_normalized_resume(resume_id: str):
+    """
+    Получение нормализованных данных резюме
+    
+    - **resume_id**: Идентификатор резюме
+    
+    Возвращает нормализованные данные резюме.
+    """
+    # Получаем нормализованные данные из базы данных
+    normalized_data = db_service.get_normalized_resume(resume_id)
+    
+    if not normalized_data:
+        raise HTTPException(status_code=404, detail=f"Нормализованные данные для резюме с ID {resume_id} не найдены")
+    
+    # Создаем объект нормализованного резюме
+    normalized_resume = NormalizedResume(
+        name=normalized_data.get("name", ""),
+        email=normalized_data.get("email", ""),
+        phone=normalized_data.get("phone", ""),
+        vacancy_name=normalized_data.get("vacancy_name", ""),
+        languages=normalized_data.get("languages", []),
+        frameworks=normalized_data.get("frameworks", []),
+        education=normalized_data.get("education", []),
+        work_experience=normalized_data.get("work_experience", [])
+    )
+    
+    return normalized_resume
+
+
+@router.get("/resume-pdf/{resume_id}", tags=["Резюме"])
+def get_resume_pdf(resume_id: str):
+    """
+    Получение PDF-файла резюме по идентификатору
+    
+    - **resume_id**: Идентификатор резюме
+    
+    Возвращает файл резюме в формате PDF.
+    """
+    # Получаем PDF-файл из базы данных
+    pdf_content = db_service.get_resume_pdf(resume_id)
+
+    if not pdf_content:
+        raise HTTPException(status_code=404, detail=f"PDF-файл для резюме с ID {resume_id} не найден")
+
+    # Получаем метаданные резюме для определения имени файла
+    _, record = db_service.get_resume(resume_id)
+
+    # Определяем имя файла
+    filename = "resume.pdf"
+    if record and record.get("metadata") and record["metadata"].get("filename"):
+        filename = record["metadata"]["filename"]
+
+    # Возвращаем PDF-файл
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+@router.post("/parse-vacancy", response_model=VacancyResponse, tags=["Вакансии"])
+def parse_vacancy(request: VacancyRequest):
+    """
+    Парсинг вакансии с hh.ru
+    
+    - **url**: URL вакансии на hh.ru
+    
+    Возвращает данные о вакансии.
+    """
+    # Парсим вакансию
+    vacancy_data, error = vacancy_parser.parse_vacancy(request.url)
+    
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    
+    if not vacancy_data:
+        raise HTTPException(status_code=500, detail="Не удалось распарсить вакансию")
+    
+    # Сохраняем вакансию в базу данных
+    vacancy_id = vacancy_data.get("id")
+    save_success = db_service.save_vacancy(
+        vacancy_id=vacancy_id,
+        title=vacancy_data.get("title"),
+        company=vacancy_data.get("company"),
+        description=vacancy_data.get("description"),
+        url=vacancy_data.get("url"),
+        original_id=vacancy_data.get("original_id"),
+        salary_from=vacancy_data.get("salary_from"),
+        salary_to=vacancy_data.get("salary_to"),
+        currency=vacancy_data.get("currency"),
+        experience=vacancy_data.get("experience"),
+        skills=vacancy_data.get("skills")
+    )
+    
+    if not save_success:
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось сохранить вакансию в базу данных. Попробуйте позже."
+        )
+    
+    # Создаем объект вакансии
+    vacancy = Vacancy(
+        id=vacancy_id,
+        title=vacancy_data.get("title"),
+        company=vacancy_data.get("company"),
+        description=vacancy_data.get("description"),
+        salary_from=vacancy_data.get("salary_from"),
+        salary_to=vacancy_data.get("salary_to"),
+        currency=vacancy_data.get("currency"),
+        experience=vacancy_data.get("experience"),
+        skills=vacancy_data.get("skills", []),
+        url=vacancy_data.get("url"),
+        created_at=vacancy_data.get("created_at")
+    )
+    
+    # Создаем ответ
+    response = VacancyResponse(
+        vacancy_id=vacancy_id,
+        vacancy=vacancy
+    )
+    
+    return response
+
+
+@router.get("/vacancies", response_model=List[Vacancy], tags=["Вакансии"])
+def get_all_vacancies():
+    """
+    Получение списка всех вакансий
+    
+    Возвращает список всех вакансий.
+    """
+    # Получаем вакансии из базы данных
+    vacancies_data = db_service.get_all_vacancies()
+    
+    # Преобразуем в список объектов Vacancy
+    vacancies = []
+    for vacancy_data in vacancies_data:
+        vacancy = Vacancy(
+            id=vacancy_data.get("id"),
+            title=vacancy_data.get("title"),
+            company=vacancy_data.get("company"),
+            description=vacancy_data.get("description"),
+            salary_from=vacancy_data.get("salary_from"),
+            salary_to=vacancy_data.get("salary_to"),
+            currency=vacancy_data.get("currency"),
+            experience=vacancy_data.get("experience"),
+            skills=vacancy_data.get("skills", []),
+            url=vacancy_data.get("url"),
+            created_at=vacancy_data.get("created_at")
+        )
+        vacancies.append(vacancy)
+    
+    return vacancies
+
+
+@router.get("/vacancy/{vacancy_id}", response_model=Vacancy, tags=["Вакансии"])
+def get_vacancy(vacancy_id: str):
+    """
+    Получение вакансии по идентификатору
+    
+    - **vacancy_id**: Идентификатор вакансии
+    
+    Возвращает данные о вакансии.
+    """
+    # Получаем вакансию из базы данных
+    vacancy_data = db_service.get_vacancy(vacancy_id)
+    
+    if not vacancy_data:
+        raise HTTPException(status_code=404, detail=f"Вакансия с ID {vacancy_id} не найдена")
+    
+    # Создаем объект вакансии
+    vacancy = Vacancy(
+        id=vacancy_data.get("id"),
+        title=vacancy_data.get("title"),
+        company=vacancy_data.get("company"),
+        description=vacancy_data.get("description"),
+        salary_from=vacancy_data.get("salary_from"),
+        salary_to=vacancy_data.get("salary_to"),
+        currency=vacancy_data.get("currency"),
+        experience=vacancy_data.get("experience"),
+        skills=vacancy_data.get("skills", []),
+        url=vacancy_data.get("url"),
+        created_at=vacancy_data.get("created_at")
+    )
+    
+    return vacancy
