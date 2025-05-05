@@ -1,7 +1,3 @@
-#!/usr/bin/env python
-"""
-Скрипт для инициализации схемы в базе данных PostgreSQL
-"""
 import os
 import sys
 
@@ -22,41 +18,6 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 
 # Инициализация консоли для красивого вывода
 console = Console()
-
-
-def check_env_variables():
-    """Проверка наличия переменных окружения"""
-    console.print("[bold]Проверка переменных окружения для подключения к БД:[/bold]")
-
-    if not DB_HOST:
-        console.print("[red]DB_HOST не указан, используется значение по умолчанию: localhost[/red]")
-    else:
-        console.print(f"[green]DB_HOST = {DB_HOST}[/green]")
-
-    if not DB_PORT:
-        console.print("[red]DB_PORT не указан, используется значение по умолчанию: 5433[/red]")
-    else:
-        console.print(f"[green]DB_PORT = {DB_PORT}[/green]")
-
-    if not DB_NAME:
-        console.print("[red]DB_NAME не указан, используется значение по умолчанию: postgres[/red]")
-    else:
-        console.print(f"[green]DB_NAME = {DB_NAME}[/green]")
-        
-    if not DB_SCHEMA:
-        console.print("[red]DB_SCHEMA не указан, используется значение по умолчанию: resume_db[/red]")
-    else:
-        console.print(f"[green]DB_SCHEMA = {DB_SCHEMA}[/green]")
-
-    if not DB_USER:
-        console.print("[red]DB_USER не указан, используется значение по умолчанию: postgres[/red]")
-    else:
-        console.print(f"[green]DB_USER = {DB_USER}[/green]")
-
-    if not DB_PASSWORD:
-        console.print("[yellow]ВНИМАНИЕ: DB_PASSWORD не указан или пустой[/yellow]")
-    else:
-        console.print("[green]DB_PASSWORD = ********[/green]")
 
 
 def create_schema():
@@ -81,17 +42,15 @@ def create_schema():
         exists = cursor.fetchone()
 
         if not exists:
-            console.print(f"[yellow]Схема {DB_SCHEMA} не существует. Создаем...[/yellow]")
-            cursor.execute(f"CREATE SCHEMA {DB_SCHEMA}")
-            console.print(f"[green]Схема {DB_SCHEMA} успешно создана[/green]")
+            cursor.execute(f"CREATE IF NOT EXISTS SCHEMA {DB_SCHEMA}")
         else:
-            console.print(f"[green]Схема {DB_SCHEMA} уже существует[/green]")
+            console.print(f"Схема {DB_SCHEMA} уже существует")
 
         cursor.close()
         conn.close()
         return True
     except Exception as e:
-        console.print(f"[bold red]Ошибка при создании схемы: {str(e)}[/bold red]")
+        console.print(f"Ошибка при создании схемы: {str(e)}")
         return False
 
 
@@ -147,6 +106,22 @@ def create_tables():
         source VARCHAR(50) DEFAULT 'hh.ru',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    
+    -- Таблица с результатами сопоставления резюме и вакансий
+    CREATE TABLE IF NOT EXISTS {DB_SCHEMA}.resume_vacancy_matches (
+        id VARCHAR(36) PRIMARY KEY,
+        resume_id VARCHAR(36) NOT NULL REFERENCES {DB_SCHEMA}.resumes(id) ON DELETE CASCADE,
+        vacancy_id VARCHAR(36) NOT NULL REFERENCES {DB_SCHEMA}.vacancies(id) ON DELETE CASCADE,
+        matched_skills JSONB,
+        unmatched_skills JSONB,
+        llm_comment TEXT,
+        score FLOAT,
+        positives JSONB,
+        negatives JSONB,
+        verdict TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(resume_id, vacancy_id)
+    );
     """
 
     try:
@@ -156,10 +131,10 @@ def create_tables():
         conn.commit()
         cursor.close()
         conn.close()
-        console.print("[green]Таблицы успешно созданы или уже существуют[/green]")
+        console.print("Таблицы успешно созданы или уже существуют")
         return True
     except Exception as e:
-        console.print(f"[bold red]Ошибка при создании таблиц: {str(e)}[/bold red]")
+        console.print(f"Ошибка при создании таблиц: {str(e)}")
         return False
 
 
@@ -173,88 +148,21 @@ def check_connection():
         "port": DB_PORT
     }
 
-    try:
-        conn = psycopg2.connect(**conn_params)
-        cursor = conn.cursor()
-        
-        # Проверка доступа к схеме
-        cursor.execute(f"SET search_path TO {DB_SCHEMA}")
-        cursor.execute("SELECT current_schema()")
-        schema = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT version()")
-        version = cursor.fetchone()[0]
-        cursor.close()
-        conn.close()
-        console.print(f"[green]Подключение к базе данных успешно:[/green] {version}")
-        console.print(f"[green]Текущая схема:[/green] {schema}")
-        return True
-    except Exception as e:
-        console.print(f"[bold red]Ошибка подключения к базе данных: {str(e)}[/bold red]")
-        return False
-
-
-def recreate_tables():
-    """Удаление и пересоздание таблиц в базе данных"""
-    # Параметры подключения к базе данных
-    conn_params = {
-        "host": DB_HOST,
-        "database": DB_NAME,
-        "user": DB_USER,
-        "password": DB_PASSWORD,
-        "port": DB_PORT
-    }
-
-    drop_tables_query = f"""
-    DROP TABLE IF EXISTS {DB_SCHEMA}.normalized_resumes;
-    DROP TABLE IF EXISTS {DB_SCHEMA}.resumes;
-    """
-
-    try:
-        conn = psycopg2.connect(**conn_params)
-        cursor = conn.cursor()
-        cursor.execute(drop_tables_query)
-        conn.commit()
-        cursor.close()
-        conn.close()
-        console.print("[green]Таблицы успешно удалены[/green]")
-        return True
-    except Exception as e:
-        console.print(f"[bold red]Ошибка при удалении таблиц: {str(e)}[/bold red]")
-        return False
-
 
 def main():
     """Основная функция инициализации базы данных"""
-    console.rule("[bold]Инициализация схемы базы данных[/bold]")
-
-    # Проверка переменных окружения
-    check_env_variables()
+    console.rule("Инициализация схемы базы данных")
 
     # Создание схемы
     if not create_schema():
         console.print(
-            "[bold red]Ошибка при создании схемы. Проверьте параметры подключения и права доступа.[/bold red]")
-        return False
-
-    # Удаление и пересоздание таблиц
-    if not recreate_tables():
-        console.print(
-            "[bold red]Ошибка при удалении таблиц. Проверьте параметры подключения и права доступа.[/bold red]")
+            "Ошибка при создании схемы. Проверьте параметры подключения и права доступа.")
         return False
 
     # Создание таблиц
     if not create_tables():
         console.print(
-            "[bold red]Ошибка при создании таблиц. Проверьте параметры подключения и права доступа.[/bold red]")
-        return False
-
-    # Проверка подключения
-    if check_connection():
-        console.print("[bold green]Схема базы данных успешно инициализирована![/bold green]")
-        return True
-    else:
-        console.print("[bold red]Ошибка при проверке подключения к базе данных![/bold red]")
+            "Ошибка при создании таблиц. Проверьте параметры подключения и права доступа.")
         return False
 
 

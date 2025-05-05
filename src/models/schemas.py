@@ -1,6 +1,6 @@
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
+
 from pydantic import BaseModel, EmailStr
-from datetime import date
 
 
 class MatchRequest(BaseModel):
@@ -13,24 +13,38 @@ class MatchResult(BaseModel):
     """Результат сопоставления резюме и вакансии"""
     matched_skills: List[str]
     unmatched_skills: List[str]
-    tfidf_score: float
     llm_comment: str
-
-
-class ResumeUploadResponse(BaseModel):
-    """Ответ на загрузку резюме"""
-    resume_id: str
-    email: EmailStr
-    extracted_text_length: int
-    metadata: Dict = {}
-    status: str = "success"
-    message: str = "Резюме успешно загружено"
+    score: float
+    positives: List[str]
+    negatives: List[str]
+    verdict: str
 
 
 class ResumeVacancyMatchRequest(BaseModel):
     """Запрос на сопоставление загруженного резюме с вакансией"""
     resume_id: str
     vacancy_text: str
+
+
+class StoredResumeVacancyMatchRequest(BaseModel):
+    """Запрос на сопоставление сохраненного резюме с сохраненной вакансией"""
+    resume_id: str
+    vacancy_id: str
+
+
+class ResumeVacancyMatchResponse(BaseModel):
+    """Ответ на запрос сопоставления резюме и вакансии"""
+    resume_id: str
+    vacancy_id: str
+    matched_skills: List[str]
+    unmatched_skills: List[str]
+    llm_comment: str
+    score: float
+    positives: List[str]
+    negatives: List[str]
+    verdict: str
+    status: str = "success"
+    message: str = "Сопоставление выполнено успешно"
 
 
 class Education(BaseModel):
@@ -94,4 +108,4 @@ class VacancyResponse(BaseModel):
     vacancy_id: str
     vacancy: Vacancy
     status: str = "success"
-    message: str = "Вакансия успешно загружена и сохранена" 
+    message: str = "Вакансия успешно загружена и сохранена"

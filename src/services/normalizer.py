@@ -1,6 +1,7 @@
-import os
 import json
+import os
 from typing import Dict, Any, Optional
+
 import requests
 from dotenv import load_dotenv
 
@@ -10,7 +11,7 @@ load_dotenv()
 
 class ResumeNormalizer:
     """Сервис для нормализации резюме с помощью DeepSeek LLM"""
-    
+
     def __init__(self, llm_api_url=None, llm_api_key=None, llm_model=None):
         """
         Инициализация нормализатора резюме
@@ -24,17 +25,17 @@ class ResumeNormalizer:
         self.llm_api_url = llm_api_url or os.getenv("LLM_API_URL")
         self.llm_api_key = llm_api_key or os.getenv("LLM_API_KEY")
         self.llm_model = llm_model or os.getenv("LLM_MODEL", "deepseek-ai/DeepSeek-V3")
-        
+
         # Проверка наличия обязательных параметров
         if not self.llm_api_url:
             raise ValueError(
                 "URL API языковой модели не указан. Укажите LLM_API_URL в .env файле или передайте параметр.")
-        
+
         if not self.llm_api_key:
             raise ValueError(
                 "Ключ API языковой модели не указан. Укажите LLM_API_KEY в .env файле или передайте параметр.")
-    
-    def normalize_resume(self, resume_text: str, email: str) -> Optional[Dict[str, Any]]:
+
+    def normalize_resume(self, resume_text: str, email: str):
         """
         Нормализует текст резюме с помощью DeepSeek LLM
         
@@ -98,7 +99,7 @@ class ResumeNormalizer:
 
 {resume_text}
         """
-        
+
         # Подготовка запроса к API
         headers = {
             "Authorization": f"Bearer {self.llm_api_key}",
@@ -111,7 +112,7 @@ class ResumeNormalizer:
             ],
             "temperature": 0.1  # Низкая температура для более детерминированных результатов
         }
-        
+
         try:
             # Отправка запроса и получение ответа
             response = requests.post(
@@ -122,10 +123,10 @@ class ResumeNormalizer:
             )
             response.raise_for_status()
             result = response.json()
-            
+
             # Извлекаем ответ модели
             llm_response = result['choices'][0]['message']['content']
-            
+
             # Попытка извлечь JSON из ответа
             # Сначала проверяем, есть ли в ответе блок кода
             if "```json" in llm_response:
@@ -134,16 +135,16 @@ class ResumeNormalizer:
                 json_str = llm_response.split("```")[1].split("```")[0].strip()
             else:
                 json_str = llm_response.strip()
-            
+
             # Парсим JSON
             normalized_data = json.loads(json_str)
-            
+
             # Проверяем, что обязательные поля присутствуют
             required_fields = ["name", "email", "vacancy_name"]
             for field in required_fields:
                 if field not in normalized_data:
                     normalized_data[field] = ""
-            
+
             # Проверяем списковые поля
             list_fields = ["languages", "frameworks"]
             for field in list_fields:
@@ -152,16 +153,16 @@ class ResumeNormalizer:
                 elif not isinstance(normalized_data[field], list):
                     # Если поле не является списком, преобразуем его в список с одним элементом
                     normalized_data[field] = [normalized_data[field]]
-            
+
             # Проверяем структуру вложенных полей
             if "education" not in normalized_data:
                 normalized_data["education"] = []
-            
+
             if "work_experience" not in normalized_data:
                 normalized_data["work_experience"] = []
-            
+
             return normalized_data
-            
+
         except Exception as e:
             print(f"Ошибка при нормализации резюме: {str(e)}")
-            return None 
+            return None

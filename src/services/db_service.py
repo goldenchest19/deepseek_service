@@ -1,9 +1,9 @@
 import os
-import json
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, List
+
 import psycopg2
-from psycopg2.extras import Json, RealDictCursor
 from dotenv import load_dotenv
+from psycopg2.extras import Json, RealDictCursor
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -19,7 +19,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 
 class DBService:
     """Сервис для работы с базой данных PostgreSQL"""
-    
+
     def __init__(self):
         """Инициализация подключения к базе данных"""
         self.conn_params = {
@@ -29,27 +29,27 @@ class DBService:
             "password": DB_PASSWORD,
             "port": DB_PORT
         }
-        
+
         # Проверка наличия параметров подключения
         self._check_db_params()
-    
+
     def _check_db_params(self):
         """Проверка параметров подключения к базе данных"""
         if not DB_HOST:
             print("ВНИМАНИЕ: Не указан DB_HOST, используется значение по умолчанию: localhost")
-        
+
         if not DB_NAME:
             print("ВНИМАНИЕ: Не указан DB_NAME, используется значение по умолчанию: postgres")
-        
+
         if not DB_SCHEMA:
             print("ВНИМАНИЕ: Не указан DB_SCHEMA, используется значение по умолчанию: resume_db")
-        
+
         if not DB_USER:
             print("ВНИМАНИЕ: Не указан DB_USER, используется значение по умолчанию: postgres")
-        
+
         if not DB_PASSWORD:
             print("ВНИМАНИЕ: DB_PASSWORD не указан")
-    
+
     def _get_connection(self):
         """Получение соединения с базой данных"""
         conn = psycopg2.connect(**self.conn_params)
@@ -58,8 +58,9 @@ class DBService:
         cursor.execute(f"SET search_path TO {DB_SCHEMA}")
         cursor.close()
         return conn
-    
-    def save_resume(self, resume_id: str, email: str, raw_text: str, metadata: Optional[Dict] = None, pdf_content: Optional[bytes] = None) -> bool:
+
+    def save_resume(self, resume_id: str, email: str, raw_text: str, metadata: Optional[Dict] = None,
+                    pdf_content: Optional[bytes] = None):
         """
         Сохраняет сырое резюме в базу данных
         
@@ -83,7 +84,7 @@ class DBService:
             pdf_content = EXCLUDED.pdf_content,
             created_at = CURRENT_TIMESTAMP
         """
-        
+
         try:
             print(f"Сохранение резюме с ID {resume_id} для {email}")
             conn = self._get_connection()
@@ -97,15 +98,15 @@ class DBService:
         except Exception as e:
             print(f"Ошибка при сохранении резюме: {str(e)}")
             return False
-    
-    def save_normalized_resume(self, resume_id: str, normalized_data: Dict[str, Any]) -> bool:
+
+    def save_normalized_resume(self, resume_id: str, normalized_data: Dict[str, Any]):
         """
         Сохраняет нормализованные данные резюме в базу данных
-        
+
         Args:
             resume_id: Идентификатор резюме
             normalized_data: Нормализованные данные резюме
-            
+
         Returns:
             True, если данные успешно сохранены
         """
@@ -125,25 +126,25 @@ class DBService:
             work_experience = EXCLUDED.work_experience,
             created_at = CURRENT_TIMESTAMP
         """
-        
+
         try:
             print(f"Сохранение нормализованных данных для резюме с ID {resume_id}")
-            
+
             # Проверяем, существует ли резюме в базе данных
             check_query = f"""
             SELECT 1 FROM {DB_SCHEMA}.resumes WHERE id = %s
             """
-            
+
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute(check_query, (resume_id,))
             if not cursor.fetchone():
                 print(f"Ошибка: Резюме с ID {resume_id} не найдено в базе данных")
                 cursor.close()
                 conn.close()
                 return False
-                
+
             cursor.execute(query, (
                 resume_id,
                 normalized_data.get("name", ""),
@@ -163,22 +164,16 @@ class DBService:
         except Exception as e:
             print(f"Ошибка при сохранении нормализованных данных: {str(e)}")
             return False
-    
-    def get_normalized_resume(self, resume_id: str) -> Optional[Dict[str, Any]]:
+
+    def get_normalized_resume(self, resume_id: str):
         """
         Получает нормализованные данные резюме
-        
-        Args:
-            resume_id: Идентификатор резюме
-            
-        Returns:
-            Нормализованные данные резюме или None, если резюме не найдено
         """
         query = f"""
         SELECT * FROM {DB_SCHEMA}.normalized_resumes
         WHERE id = %s
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -186,27 +181,21 @@ class DBService:
             result = cursor.fetchone()
             cursor.close()
             conn.close()
-            
+
             return dict(result) if result else None
         except Exception as e:
             print(f"Ошибка при получении нормализованных данных: {str(e)}")
             return None
-            
-    def get_resume(self, resume_id: str) -> Optional[Tuple[str, Dict]]:
+
+    def get_resume(self, resume_id: str):
         """
         Получает резюме по идентификатору из базы данных
-        
-        Args:
-            resume_id: Идентификатор резюме
-            
-        Returns:
-            Кортеж (текст резюме, метаданные) или None, если резюме не найдено
         """
         query = f"""
         SELECT id, email, raw_text, metadata, created_at FROM {DB_SCHEMA}.resumes
         WHERE id = %s
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -214,31 +203,25 @@ class DBService:
             result = cursor.fetchone()
             cursor.close()
             conn.close()
-            
+
             if not result:
                 return None, None
-                
+
             record = dict(result)
             return record.get("raw_text", ""), record
         except Exception as e:
             print(f"Ошибка при получении резюме: {str(e)}")
             return None, None
-            
-    def get_resume_pdf(self, resume_id: str) -> Optional[bytes]:
+
+    def get_resume_pdf(self, resume_id: str):
         """
         Получает PDF-файл резюме по идентификатору
-        
-        Args:
-            resume_id: Идентификатор резюме
-            
-        Returns:
-            Содержимое PDF-файла в бинарном формате или None, если файл не найден
         """
         query = f"""
         SELECT pdf_content FROM {DB_SCHEMA}.resumes
         WHERE id = %s
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -246,19 +229,19 @@ class DBService:
             result = cursor.fetchone()
             cursor.close()
             conn.close()
-            
+
             return result[0] if result and result[0] else None
         except Exception as e:
             print(f"Ошибка при получении PDF-файла резюме: {str(e)}")
             return None
-            
-    def get_resumes_by_email(self, email: str) -> List[Dict]:
+
+    def get_resumes_by_email(self, email: str):
         """
         Получает все резюме пользователя по email из базы данных
-        
+
         Args:
             email: Email пользователя
-            
+
         Returns:
             Список резюме пользователя
         """
@@ -267,7 +250,7 @@ class DBService:
         WHERE email = %s
         ORDER BY created_at DESC
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -275,17 +258,17 @@ class DBService:
             results = cursor.fetchall()
             cursor.close()
             conn.close()
-            
+
             return [dict(r) for r in results] if results else []
         except Exception as e:
             print(f"Ошибка при получении резюме пользователя: {str(e)}")
             return []
-            
-    def save_vacancy(self, vacancy_id: str, title: str, company: str, description: str, 
-                     url: str, original_id: Optional[str] = None, 
+
+    def save_vacancy(self, vacancy_id: str, title: str, company: str, description: str,
+                     url: str, original_id: Optional[str] = None,
                      salary_from: Optional[int] = None, salary_to: Optional[int] = None,
                      currency: Optional[str] = None, experience: Optional[str] = None,
-                     skills: Optional[List[str]] = None) -> bool:
+                     skills: Optional[List[str]] = None):
         """
         Сохраняет вакансию в базу данных
         
@@ -324,7 +307,7 @@ class DBService:
             skills = EXCLUDED.skills,
             created_at = CURRENT_TIMESTAMP
         """
-        
+
         try:
             print(f"Сохранение вакансии с ID {vacancy_id} - {title}")
             conn = self._get_connection()
@@ -350,22 +333,16 @@ class DBService:
         except Exception as e:
             print(f"Ошибка при сохранении вакансии: {str(e)}")
             return False
-    
-    def get_vacancy(self, vacancy_id: str) -> Optional[Dict[str, Any]]:
+
+    def get_vacancy(self, vacancy_id: str):
         """
         Получает вакансию по идентификатору
-        
-        Args:
-            vacancy_id: Идентификатор вакансии
-            
-        Returns:
-            Данные о вакансии или None, если вакансия не найдена
         """
         query = f"""
         SELECT * FROM {DB_SCHEMA}.vacancies
         WHERE id = %s
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -373,16 +350,16 @@ class DBService:
             result = cursor.fetchone()
             cursor.close()
             conn.close()
-            
+
             return dict(result) if result else None
         except Exception as e:
             print(f"Ошибка при получении вакансии: {str(e)}")
             return None
-    
-    def get_all_vacancies(self) -> List[Dict[str, Any]]:
+
+    def get_all_vacancies(self):
         """
         Получает все вакансии из базы данных
-        
+
         Returns:
             Список вакансий
         """
@@ -390,7 +367,7 @@ class DBService:
         SELECT * FROM {DB_SCHEMA}.vacancies
         ORDER BY created_at DESC
         """
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -398,8 +375,146 @@ class DBService:
             results = cursor.fetchall()
             cursor.close()
             conn.close()
-            
+
             return [dict(r) for r in results] if results else []
         except Exception as e:
             print(f"Ошибка при получении всех вакансий: {str(e)}")
-            return [] 
+            return []
+
+    def save_resume_vacancy_match(self, match_id: str, resume_id: str, vacancy_id: str,
+                                  matched_skills: List[str], unmatched_skills: List[str],
+                                  llm_comment: str, score: float, positives: List[str],
+                                  negatives: List[str], verdict: str):
+        """
+        Сохраняет результат сопоставления резюме и вакансии в базу данных
+        
+        Args:
+            match_id: Уникальный идентификатор сопоставления
+            resume_id: Идентификатор резюме
+            vacancy_id: Идентификатор вакансии
+            matched_skills: Список совпадающих навыков
+            unmatched_skills: Список несовпадающих навыков
+            llm_comment: Комментарий языковой модели
+            score: Оценка соответствия (от 0 до 1)
+            positives: Список положительных моментов
+            negatives: Список отрицательных моментов
+            verdict: Итоговый вердикт
+            
+        Returns:
+            True, если данные успешно сохранены
+        """
+        query = f"""
+        INSERT INTO {DB_SCHEMA}.resume_vacancy_matches (
+            id, resume_id, vacancy_id, matched_skills, 
+            unmatched_skills, llm_comment, score, positives, 
+            negatives, verdict
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (resume_id, vacancy_id) DO UPDATE
+        SET matched_skills = EXCLUDED.matched_skills,
+            unmatched_skills = EXCLUDED.unmatched_skills,
+            llm_comment = EXCLUDED.llm_comment,
+            score = EXCLUDED.score,
+            positives = EXCLUDED.positives,
+            negatives = EXCLUDED.negatives,
+            verdict = EXCLUDED.verdict,
+            created_at = CURRENT_TIMESTAMP
+        """
+
+        try:
+            print(f"Сохранение результата сопоставления резюме {resume_id} и вакансии {vacancy_id}")
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(query, (
+                match_id,
+                resume_id,
+                vacancy_id,
+                Json(matched_skills),
+                Json(unmatched_skills),
+                llm_comment,
+                score,
+                Json(positives),
+                Json(negatives),
+                verdict
+            ))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print(f"Результат сопоставления успешно сохранен с ID {match_id}")
+            return True
+        except Exception as e:
+            print(f"Ошибка при сохранении результата сопоставления: {str(e)}")
+            return False
+
+    def get_resume_vacancy_match(self, resume_id: str, vacancy_id: str):
+        """
+        Получает результат сопоставления резюме и вакансии из базы данных
+        """
+        query = f"""
+        SELECT * FROM {DB_SCHEMA}.resume_vacancy_matches
+        WHERE resume_id = %s AND vacancy_id = %s
+        """
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, (resume_id, vacancy_id))
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+
+            return dict(result) if result else None
+        except Exception as e:
+            print(f"Ошибка при получении результата сопоставления: {str(e)}")
+            return None
+
+    def get_resume_matches(self, resume_id: str):
+        """
+        Получает все сопоставления для конкретного резюме
+        """
+        query = f"""
+        SELECT m.*, v.title AS vacancy_title, v.company AS vacancy_company
+        FROM {DB_SCHEMA}.resume_vacancy_matches m
+        JOIN {DB_SCHEMA}.vacancies v ON m.vacancy_id = v.id
+        WHERE m.resume_id = %s
+        ORDER BY m.created_at DESC
+        """
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, (resume_id,))
+            results = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            return [dict(r) for r in results] if results else []
+        except Exception as e:
+            print(f"Ошибка при получении сопоставлений для резюме: {str(e)}")
+            return []
+
+    def get_vacancy_matches(self, vacancy_id: str):
+        """
+        Получает все сопоставления для конкретной вакансии
+        """
+        query = f"""
+        SELECT m.*, r.email AS candidate_email
+        FROM {DB_SCHEMA}.resume_vacancy_matches m
+        JOIN {DB_SCHEMA}.resumes r ON m.resume_id = r.id
+        WHERE m.vacancy_id = %s
+        ORDER BY m.created_at DESC
+        """
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, (vacancy_id,))
+            results = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            return [dict(r) for r in results] if results else []
+        except Exception as e:
+            print(f"Ошибка при получении сопоставлений для вакансии: {str(e)}")
+            return []

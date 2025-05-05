@@ -1,6 +1,6 @@
 import re
 import uuid
-from typing import Dict, Any, List, Optional, Tuple
+from typing import List
 from urllib.parse import urlparse
 
 import requests
@@ -43,29 +43,17 @@ class VacancyParser:
             "Компания", "Офис", "Сотрудник", "Коллега", "Руководитель", "Менеджер"
         ]
 
-    def _clean_salary_str(self, salary_str: str) -> int:
+    def _clean_salary_str(self, salary_str: str):
         """
         Очищает строку с зарплатой от пробелов и других символов, конвертирует в число
-        
-        Args:
-            salary_str: Строка с числовым значением зарплаты
-            
-        Returns:
-            Целое число (значение зарплаты)
         """
         # Удаляем все нецифровые символы (включая пробелы, неразрывные пробелы и т.д.)
         cleaned_str = ''.join(c for c in salary_str if c.isdigit())
         return int(cleaned_str) if cleaned_str else 0
 
-    def _extract_currency(self, currency_text: str) -> str:
+    def _extract_currency(self, currency_text: str):
         """
         Извлекает валюту из строки, которая может содержать дополнительный текст
-        
-        Args:
-            currency_text: Строка с валютой и возможным дополнительным текстом
-            
-        Returns:
-            Очищенная строка с валютой
         """
         # Список возможных валют
         currencies = ["руб.", "USD", "EUR", "₽", "$", "€"]
@@ -78,15 +66,9 @@ class VacancyParser:
         # Если не нашли известную валюту, берем первое слово
         return currency_text.split()[0] if ' ' in currency_text else currency_text
 
-    def _extract_skills_from_description(self, description: str) -> List[str]:
+    def _extract_skills_from_description(self, description: str):
         """
         Извлекает навыки из описания вакансии
-        
-        Args:
-            description: Текст описания вакансии
-            
-        Returns:
-            Список навыков
         """
         # Найденные навыки
         found_skills = []
@@ -105,15 +87,9 @@ class VacancyParser:
 
         return found_skills
 
-    def _normalize_skills(self, skills: List[str]) -> List[str]:
+    def _normalize_skills(self, skills: List[str]):
         """
         Нормализует список навыков, удаляя дубликаты и неподходящие слова
-        
-        Args:
-            skills: Исходный список навыков
-            
-        Returns:
-            Нормализованный список навыков
         """
         # Удаляем дубликаты (с учетом регистра)
         unique_skills = []
@@ -158,15 +134,9 @@ class VacancyParser:
 
         return final_skills
 
-    def parse_vacancy(self, url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    def parse_vacancy(self, url: str):
         """
         Парсит вакансию по URL
-        
-        Args:
-            url: URL вакансии на hh.ru
-            
-        Returns:
-            Кортеж (данные о вакансии, сообщение об ошибке)
         """
         # Проверка, что URL указывает на hh.ru
         parsed_url = urlparse(url)

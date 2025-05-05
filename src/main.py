@@ -1,6 +1,10 @@
+import os
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router
 
@@ -25,11 +29,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Корневой маршрут с информацией о сервисе
+# Определение пути к статическим файлам
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+# Монтирование статических файлов
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+# Корневой маршрут для отображения интерфейса
 @app.get("/", tags=["Система"])
 def read_root():
     """
-    Корневой эндпоинт с информацией о сервисе
+    Корневой эндпоинт, отображающий пользовательский интерфейс
+    """
+    return FileResponse(os.path.join(static_dir, "index.html"))
+
+
+# Маршрут с информацией о сервисе
+@app.get("/info", tags=["Система"])
+def service_info():
+    """
+    Эндпоинт с информацией о сервисе
     
     Возвращает базовую информацию о сервисе и доступных эндпоинтах.
     """
@@ -47,6 +67,7 @@ def read_root():
             {"path": "/api/normalized-resume/{resume_id}", "description": "Получение нормализованных данных резюме"}
         ]
     }
+
 
 # Регистрация роутера
 app.include_router(router, prefix="/api")
