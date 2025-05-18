@@ -559,14 +559,14 @@ def get_vacancy_matches(vacancy_id: str):
         raise HTTPException(status_code=500, detail=f"Ошибка при получении сопоставлений: {str(e)}")
 
 
-@router.post("/parse-habr-vacancy", tags=["Вакансии"])
+@router.post("/parse-habr-vacancy", response_model=VacancyResponse, tags=["Вакансии"])
 def parse_habr_vacancy(request: VacancyRequest):
     """
     Парсинг вакансии с career.habr.com
     
     - **url**: URL вакансии на career.habr.com
     
-    Возвращает данные о вакансии в формате vacancy_data.
+    Возвращает данные о вакансии в формате VacancyResponse.
     """
     vacancy_data, error = habr_vacancy_parser.parse_vacancy(request.url)
 
@@ -576,4 +576,26 @@ def parse_habr_vacancy(request: VacancyRequest):
     if not vacancy_data:
         raise HTTPException(status_code=500, detail="Не удалось распарсить вакансию")
 
-    return vacancy_data
+    vacancy = Vacancy(
+        id=vacancy_data.get("id"),
+        title=vacancy_data.get("title"),
+        company=vacancy_data.get("company"),
+        description=vacancy_data.get("description"),
+        salary_from=vacancy_data.get("salary_from"),
+        salary_to=vacancy_data.get("salary_to"),
+        currency=vacancy_data.get("currency"),
+        experience=vacancy_data.get("experience"),
+        skills=vacancy_data.get("skills", []),
+        url=vacancy_data.get("url"),
+        created_at=vacancy_data.get("created_at"),
+        work_format=vacancy_data.get("work_format")
+    )
+
+    response = VacancyResponse(
+        vacancy_id=vacancy_data.get("id"),
+        vacancy=vacancy,
+        status="success",
+        message="Вакансия успешно загружена"
+    )
+
+    return response
