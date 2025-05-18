@@ -101,6 +101,7 @@ class Vacancy(BaseModel):
     skills: List[str] = []
     url: str
     created_at: Optional[str] = None
+    work_format: Optional[str] = None  # Формат работы (удаленно, офис, гибрид и т.д.)
 
 
 class VacancyResponse(BaseModel):

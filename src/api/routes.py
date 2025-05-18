@@ -296,31 +296,9 @@ def parse_vacancy(request: VacancyRequest):
     if not vacancy_data:
         raise HTTPException(status_code=500, detail="Не удалось распарсить вакансию")
 
-    # Сохраняем вакансию в базу данных
-    vacancy_id = vacancy_data.get("id")
-    save_success = db_service.save_vacancy(
-        vacancy_id=vacancy_id,
-        title=vacancy_data.get("title"),
-        company=vacancy_data.get("company"),
-        description=vacancy_data.get("description"),
-        url=vacancy_data.get("url"),
-        original_id=vacancy_data.get("original_id"),
-        salary_from=vacancy_data.get("salary_from"),
-        salary_to=vacancy_data.get("salary_to"),
-        currency=vacancy_data.get("currency"),
-        experience=vacancy_data.get("experience"),
-        skills=vacancy_data.get("skills")
-    )
-
-    if not save_success:
-        raise HTTPException(
-            status_code=500,
-            detail="Не удалось сохранить вакансию в базу данных. Попробуйте позже."
-        )
-
     # Создаем объект вакансии
     vacancy = Vacancy(
-        id=vacancy_id,
+        id=vacancy_data.get("id"),
         title=vacancy_data.get("title"),
         company=vacancy_data.get("company"),
         description=vacancy_data.get("description"),
@@ -330,13 +308,16 @@ def parse_vacancy(request: VacancyRequest):
         experience=vacancy_data.get("experience"),
         skills=vacancy_data.get("skills", []),
         url=vacancy_data.get("url"),
-        created_at=vacancy_data.get("created_at")
+        created_at=vacancy_data.get("created_at"),
+        work_format=vacancy_data.get("work_format")
     )
 
     # Создаем ответ
     response = VacancyResponse(
-        vacancy_id=vacancy_id,
-        vacancy=vacancy
+        vacancy_id=vacancy_data.get("id"),
+        vacancy=vacancy,
+        status="success",
+        message="Вакансия успешно загружена"
     )
 
     return response
@@ -366,7 +347,8 @@ def get_all_vacancies():
             experience=vacancy_data.get("experience"),
             skills=vacancy_data.get("skills", []),
             url=vacancy_data.get("url"),
-            created_at=vacancy_data.get("created_at")
+            created_at=vacancy_data.get("created_at"),
+            work_format=vacancy_data.get("work_format")
         )
         vacancies.append(vacancy)
 
@@ -400,7 +382,8 @@ def get_vacancy(vacancy_id: str):
         experience=vacancy_data.get("experience"),
         skills=vacancy_data.get("skills", []),
         url=vacancy_data.get("url"),
-        created_at=vacancy_data.get("created_at")
+        created_at=vacancy_data.get("created_at"),
+        work_format=vacancy_data.get("work_format")
     )
 
     return vacancy

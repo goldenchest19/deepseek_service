@@ -159,9 +159,25 @@ class VacancyParser:
             title_elem = soup.select_one('h1.bloko-header-section-1')
             title = title_elem.text.strip() if title_elem else "Неизвестная вакансия"
 
-            # Парсинг названия компании
-            company_elem = soup.select_one('span[data-qa="bloko-header-2"], a.bloko-link')
+            # Парсинг названия компании (ищем только корректный блок)
+            company_elem = soup.select_one('[data-qa="vacancy-company-name"] span, [data-qa="vacancy-company-name"] a')
             company = company_elem.text.strip() if company_elem else "Неизвестная компания"
+
+            # Парсинг формата работы (удаленно, офис, гибрид и т.д.)
+            work_format = None
+            work_format_elem = soup.find(lambda tag: tag.name == 'p' and tag.text and ("удал" in tag.text.lower() or "офис" in tag.text.lower() or "гибрид" in tag.text.lower()))
+            if work_format_elem:
+                work_format = work_format_elem.text.strip()
+            else:
+                # Альтернативный способ: ищем по ключевым словам в описании
+                description_elem = soup.select_one('[data-qa="vacancy-description"]')
+                description_text = description_elem.text.lower() if description_elem else ""
+                if "удал" in description_text:
+                    work_format = "Удаленно"
+                elif "офис" in description_text:
+                    work_format = "В офисе"
+                elif "гибрид" in description_text:
+                    work_format = "Гибрид"
 
             # Парсинг зарплаты
             salary_elem = soup.select_one('[data-qa="vacancy-salary"] span, [data-qa="vacancy-salary"]')
@@ -178,7 +194,7 @@ class VacancyParser:
                     currency = currency_match.group(1)
 
                 # Удаляем фразы "до вычета налогов", "на руки", "за месяц" и т.д. перед парсингом
-                cleaned_salary_text = re.sub(r'\s+(до вычета налогов|на руки|за месяц).*$', '', salary_text)
+                cleaned_salary_text = re.sub(r'\s+(до вычета налогов|на руки|за месяц).*$','', salary_text)
 
                 # Проверяем на диапазон с дефисом (например, "350 000 - 430 000 ₽")
                 range_match = re.search(r'(\d+[\s\xa0]*\d*)\s*[-–—]\s*(\d+[\s\xa0]*\d*)', cleaned_salary_text)
@@ -246,7 +262,8 @@ class VacancyParser:
                 "experience": experience,
                 "skills": skills,
                 "url": url,
-                "original_id": original_id
+                "original_id": original_id,
+                "work_format": work_format
             }
 
             return vacancy_data, None
