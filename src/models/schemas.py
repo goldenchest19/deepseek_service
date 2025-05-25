@@ -110,3 +110,71 @@ class VacancyResponse(BaseModel):
     vacancy: Vacancy
     status: str = "success"
     message: str = "Вакансия успешно загружена и сохранена"
+
+
+class EducationDTO(BaseModel):
+    degree: str
+    direction: str
+    specialty: str
+
+
+class WorkExperienceDTO(BaseModel):
+    end_date: str
+    start_date: str
+    achievements: List[str]
+    company_name: str
+    technologies: List[str]
+
+
+class ResumeDTO(BaseModel):
+    id: int
+    email: str
+    name: str
+    phone: str
+    role: str
+    hardSkills: List[str]
+    softSkills: List[str]
+    education: List[EducationDTO]
+    workExperience: List[WorkExperienceDTO]
+
+
+class VacancyDTO(BaseModel):
+    id: int
+    title: str
+    description: str
+    requirements: Optional[str]
+    company: str
+    responsibilities: Optional[str]
+    skills: List[str]
+    salaryFrom: Optional[int]
+    salaryTo: Optional[int]
+    location: Optional[str]
+    source: str
+    createdAt: str
+    currency: str
+    experience: str
+    url: str
+    originalId: Optional[int]
+    status: str
+    formatWork: str
+
+
+class ResumeVacancyFullMatchRequest(BaseModel):
+    resume: ResumeDTO
+    vacancy: VacancyDTO
+
+
+class ResumeVacancyFullMatchResponse(BaseModel):
+    """Расширенный ответ на сопоставление резюме и вакансии"""
+    id: int
+    resumeId: int
+    vacancyId: int
+    matchedSkills: List[str]
+    unmatchedSkills: List[str]
+    llmComment: str
+    createdAt: str
+    score: float
+    positives: List[str]
+    negatives: List[str]
+    verdict: str
+    clarifyingQuestions: List[str] = []
