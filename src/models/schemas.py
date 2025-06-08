@@ -113,50 +113,50 @@ class VacancyResponse(BaseModel):
 
 
 class EducationDTO(BaseModel):
-    degree: str
-    direction: str
-    specialty: str
+    degree: Optional[str] = None
+    direction: Optional[str] = None
+    specialty: Optional[str] = None
 
 
 class WorkExperienceDTO(BaseModel):
-    end_date: str
-    start_date: str
-    achievements: List[str]
-    company_name: str
-    technologies: List[str]
+    end_date: Optional[str] = None
+    start_date: Optional[str] = None
+    achievements: Optional[List[str]] = []
+    company_name: Optional[str] = None
+    technologies: Optional[List[str]] = []
 
 
 class ResumeDTO(BaseModel):
-    id: int
-    email: str
-    name: str
-    phone: str
-    role: str
-    hardSkills: List[str]
-    softSkills: List[str]
-    education: List[EducationDTO]
-    workExperience: List[WorkExperienceDTO]
+    id: Optional[int] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    role: Optional[str] = None
+    hardSkills: Optional[List[str]] = []
+    softSkills: Optional[List[str]] = []
+    education: Optional[List[EducationDTO]] = []
+    workExperience: Optional[List[WorkExperienceDTO]] = []
 
 
 class VacancyDTO(BaseModel):
-    id: int
-    title: str
-    description: str
-    requirements: Optional[str]
-    company: str
-    responsibilities: Optional[str]
-    skills: List[str]
-    salaryFrom: Optional[int]
-    salaryTo: Optional[int]
-    location: Optional[str]
-    source: str
-    createdAt: str
-    currency: str
-    experience: str
-    url: str
-    originalId: Optional[int]
-    status: str
-    formatWork: str
+    id: Optional[int] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    company: Optional[str] = None
+    responsibilities: Optional[str] = None
+    skills: Optional[List[str]] = []
+    salaryFrom: Optional[int] = None
+    salaryTo: Optional[int] = None
+    location: Optional[str] = None
+    source: Optional[str] = None
+    createdAt: Optional[str] = None
+    currency: Optional[str] = None
+    experience: Optional[str] = None
+    url: Optional[str] = None
+    originalId: Optional[str] = None
+    status: Optional[str] = None
+    formatWork: Optional[str] = None
 
 
 class ResumeVacancyFullMatchRequest(BaseModel):
